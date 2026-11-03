@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 
 TOOLS = [consultar_banco_dados_loja, consultar_status_pedido, consultar_politicas_loja]
 LIMITE_DE_PASSOS = 12
-CODIGOS_TRANSITORIOS = {429, 500, 502, 503, 504}
+CODIGOS_TRANSITORIOS = {500, 502, 503, 504}
 MSG_ERRO = (
     "Desculpa, bicho, tive um problema aqui para consultar isso agora. "
     "Pode tentar de novo em instantes? Se preferir, fale com a equipe no (67) 3341-4444."
