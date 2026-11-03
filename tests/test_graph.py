@@ -4,6 +4,9 @@ from langchain_core.messages import AIMessage, SystemMessage, ToolMessage
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.checkpoint.sqlite import SqliteSaver
 
+from langgraph.types import RetryPolicy
+
+from app.agent import graph as modulo_grafo
 from app.agent.graph import MSG_ERRO, build_graph, responder
 
 
@@ -93,3 +96,62 @@ def test_loop_infinito_de_ferramentas_e_interrompido():
 
     assert responder("Quanto custa?", "t1", grafo) == MSG_ERRO
     assert len(llm.chamadas) < 50
+
+
+class ErroDeApi(Exception):
+    def __init__(self, codigo):
+        super().__init__(f"{codigo} erro simulado")
+        self.code = codigo
+
+
+class LLMInstavel(LLMFalso):
+    """Falha com o código HTTP indicado nas primeiras `falhas` tentativas."""
+
+    def __init__(self, falhas, respostas, codigo=503):
+        super().__init__(respostas)
+        self.falhas = falhas
+        self.codigo = codigo
+        self.tentativas = 0
+
+    def invoke(self, mensagens):
+        self.tentativas += 1
+        if self.tentativas <= self.falhas:
+            raise ErroDeApi(self.codigo)
+        return super().invoke(mensagens)
+
+
+def retry_rapido(monkeypatch):
+    monkeypatch.setattr(
+        modulo_grafo,
+        "POLITICA_DE_RETRY",
+        RetryPolicy(initial_interval=0.01, max_attempts=3, retry_on=modulo_grafo.erro_transitorio),
+    )
+
+
+def test_erro_503_passageiro_e_repetido_ate_funcionar(monkeypatch):
+    retry_rapido(monkeypatch)
+    llm = LLMInstavel(falhas=2, respostas=[AIMessage("Oi!")])
+    grafo = build_graph(llm=llm, checkpointer=MemorySaver())
+
+    assert responder("Oi", "t1", grafo) == "Oi!"
+    assert llm.tentativas == 3
+    salvas = grafo.get_state({"configurable": {"thread_id": "t1"}}).values["messages"]
+    assert [m.content for m in salvas].count("Oi") == 1
+
+
+def test_503_persistente_desiste_apos_as_tentativas_e_devolve_mensagem_amigavel(monkeypatch):
+    retry_rapido(monkeypatch)
+    llm = LLMInstavel(falhas=99, respostas=[])
+    grafo = build_graph(llm=llm, checkpointer=MemorySaver())
+
+    assert responder("Oi", "t1", grafo) == MSG_ERRO
+    assert llm.tentativas == 3
+
+
+def test_erro_que_nao_e_passageiro_nao_e_repetido(monkeypatch):
+    retry_rapido(monkeypatch)
+    llm = LLMInstavel(falhas=99, respostas=[], codigo=400)
+    grafo = build_graph(llm=llm, checkpointer=MemorySaver())
+
+    assert responder("Oi", "t1", grafo) == MSG_ERRO
+    assert llm.tentativas == 1

@@ -8,6 +8,7 @@ from langgraph.checkpoint.sqlite import SqliteSaver
 from langgraph.errors import GraphRecursionError
 from langgraph.graph import END, START, StateGraph
 from langgraph.prebuilt import ToolNode, tools_condition
+from langgraph.types import RetryPolicy
 
 from app.agent.persona import montar_prompt_sistema
 from app.agent.state import AgentState
@@ -19,11 +20,16 @@ logger = logging.getLogger(__name__)
 
 TOOLS = [consultar_banco_dados_loja, consultar_status_pedido, consultar_politicas_loja]
 LIMITE_DE_PASSOS = 12
+CODIGOS_TRANSITORIOS = {429, 500, 502, 503, 504}
 MSG_ERRO = (
     "Desculpa, bicho, tive um problema aqui para consultar isso agora. "
     "Pode tentar de novo em instantes? Se preferir, fale com a equipe no (67) 3341-4444."
 )
 
+def erro_transitorio(erro: Exception) -> bool:
+    return getattr(erro, "code", None) in CODIGOS_TRANSITORIOS
+
+POLITICA_DE_RETRY = RetryPolicy(initial_interval=2.0, max_attempts=3, retry_on=erro_transitorio)
 
 def criar_llm() -> ChatGoogleGenerativeAI:
     settings = get_settings()
@@ -45,7 +51,7 @@ def build_graph(llm=None, checkpointer=None):
         return {"messages": [llm_com_tools.invoke(mensagens)]}
 
     grafo = StateGraph(AgentState)
-    grafo.add_node("agent_llm", agent_llm)
+    grafo.add_node("agent_llm", agent_llm, retry_policy=POLITICA_DE_RETRY)
     grafo.add_node("execute_tools", ToolNode(TOOLS))
     grafo.add_edge(START, "agent_llm")
     grafo.add_conditional_edges(
