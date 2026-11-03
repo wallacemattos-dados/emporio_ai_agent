@@ -1,0 +1,18 @@
+# Segredos
+.env
+
+# Ambientes virtuais
+venv/
+.venv/
+
+# Python
+__pycache__/
+*.pyc
+
+# Gerado em execução
+storage/
+
+# Sistema e editores
+.DS_Store
+.vscode/
+.idea/
