@@ -1,13 +1,14 @@
+import logging
 import sqlite3
 
-from langchain_core.messages import AIMessage, SystemMessage, ToolMessage
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.checkpoint.sqlite import SqliteSaver
 
 from langgraph.types import RetryPolicy
 
 from app.agent import graph as modulo_grafo
-from app.agent.graph import MSG_ERRO, build_graph, responder
+from app.agent.graph import MSG_ERRO, build_graph, ferramentas_do_turno, responder
 
 
 class LLMFalso:
@@ -155,3 +156,28 @@ def test_erro_que_nao_e_passageiro_nao_e_repetido(monkeypatch):
 
     assert responder("Oi", "t1", grafo) == MSG_ERRO
     assert llm.tentativas == 1
+
+def test_ferramentas_do_turno_ignora_turnos_anteriores():
+    historico = [
+        HumanMessage("Quanto custa o GD20?"),
+        chamada_gd20(),
+        ToolMessage("{}", tool_call_id="call_1"),
+        AIMessage("R$ 2.199,00"),
+        HumanMessage("Obrigado!"),
+        AIMessage("Por nada!"),
+    ]
+    assert ferramentas_do_turno(historico[:4]) == ["consultar_banco_dados_loja"]
+    assert ferramentas_do_turno(historico) == []
+
+
+def test_responder_registra_ferramentas_usadas_e_tempo(caplog):
+    llm = LLMFalso([chamada_gd20(), AIMessage("R$ 2.199,00")])
+    grafo = build_graph(llm=llm, checkpointer=MemorySaver())
+
+    with caplog.at_level(logging.INFO, logger="app.agent.graph"):
+        responder("Quanto custa o GD20?", "t1", grafo)
+
+    registro = caplog.text
+    assert "thread=t1" in registro
+    assert "consultar_banco_dados_loja" in registro
+    assert "tempo=" in registro

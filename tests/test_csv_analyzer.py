@@ -134,3 +134,41 @@ def test_email_errado_e_pedido_inexistente_dao_a_mesma_resposta():
 def test_resposta_do_pedido_nao_devolve_o_email_do_cliente():
     email = email_do_cliente_do_pedido(1)
     assert email not in buscar_pedido(1, email)
+
+@pytest.mark.parametrize(
+    "sql",
+    [
+        "ATTACH 'outro.db' AS x",
+        "COPY (SELECT 1) TO 'saida.csv'",
+        "PRAGMA database_list",
+        "INSTALL httpfs",
+        "SET enable_external_access = true",
+        "CREATE TABLE x AS SELECT 1",
+        "-- comentário\nDROP VIEW catalogo",
+        "SELECT 1; DROP VIEW catalogo",
+    ],
+)
+def test_comandos_perigosos_sao_rejeitados_antes_de_chegar_ao_banco(sql):
+    assert consultar_catalogo(sql).startswith("ERRO")
+
+
+@pytest.mark.parametrize(
+    "consulta",
+    [
+        "SELECT * FROM read_text('{clientes}')",
+        "SELECT * FROM read_csv('{pedidos}')",
+        "SELECT * FROM read_json('{clientes}')",
+        "SELECT * FROM '{clientes}'",
+        "SELECT * FROM glob('{pasta}/*')",
+    ],
+)
+def test_select_nao_consegue_ler_arquivos_nem_listar_pastas(consulta):
+    data = get_settings().data_dir
+    sql = consulta.format(
+        clientes=(data / "customers.csv").as_posix(),
+        pedidos=(data / "orders.csv").as_posix(),
+        pasta=data.as_posix(),
+    )
+    resposta = consultar_catalogo(sql)
+    assert resposta.startswith("ERRO")
+    assert "@" not in resposta

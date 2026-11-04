@@ -1,6 +1,10 @@
 import uuid
 
 import streamlit as st
+import logging
+
+logging.basicConfig(format="%(asctime)s %(name)s %(message)s")
+logging.getLogger("app").setLevel(logging.INFO)
 
 from app.agent.graph import responder
 

@@ -1,4 +1,5 @@
 import logging
+import time
 import sqlite3
 from functools import lru_cache
 
@@ -30,6 +31,16 @@ def erro_transitorio(erro: Exception) -> bool:
     return getattr(erro, "code", None) in CODIGOS_TRANSITORIOS
 
 POLITICA_DE_RETRY = RetryPolicy(initial_interval=2.0, max_attempts=3, retry_on=erro_transitorio)
+
+def ferramentas_do_turno(mensagens) -> list[str]:
+    ultima_pergunta = max(
+        (i for i, m in enumerate(mensagens) if isinstance(m, HumanMessage)), default=-1
+    )
+    return [
+        chamada["name"]
+        for mensagem in mensagens[ultima_pergunta + 1 :]
+        for chamada in getattr(mensagem, "tool_calls", None) or []
+    ]
 
 def criar_llm() -> ChatGoogleGenerativeAI:
     settings = get_settings()
@@ -69,6 +80,7 @@ def obter_grafo():
 def responder(mensagem: str, thread_id: str, grafo=None) -> str:
     grafo = grafo or obter_grafo()
     config = {"configurable": {"thread_id": thread_id}, "recursion_limit": LIMITE_DE_PASSOS}
+    inicio = time.perf_counter()
     try:
         resultado = grafo.invoke({"messages": [HumanMessage(mensagem)]}, config)
     except GraphRecursionError:
@@ -77,5 +89,11 @@ def responder(mensagem: str, thread_id: str, grafo=None) -> str:
     except Exception:
         logger.exception("Falha ao processar a mensagem (thread %s)", thread_id)
         return MSG_ERRO
+    logger.info(
+        "thread=%s ferramentas=%s tempo=%.1fs",
+        thread_id,
+        ferramentas_do_turno(resultado["messages"]),
+        time.perf_counter() - inicio,
+    )
     texto = str(resultado["messages"][-1].text).strip()
     return texto or MSG_ERRO
