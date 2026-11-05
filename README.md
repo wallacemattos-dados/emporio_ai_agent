@@ -12,7 +12,7 @@ Requirements: Python 3.11+ (tested on Windows, Python [CONFIRM: 3.13 / 3.14]) an
 [Google AI Studio](https://aistudio.google.com/apikey) API key.
 
 ```bash
-git clone <REPO-URL> && cd emporio_ai_agent
+git clone https://github.com/wallacemattos-dados && cd emporio_ai_agent
 python -m venv venv
 source venv/bin/activate            # Windows PowerShell: venv\Scripts\Activate.ps1
 pip install -r requirements.txt
